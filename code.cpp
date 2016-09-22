@@ -1,15 +1,13 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include "core/sensor_data.h"
 #include "core/geometry_utils.h"
+#include "core/state_data.h"
 #include <math.h>
 #include <limits>
 
 using namespace std;
-
-#define EQ_D(x,y) \
-  (std::abs((x)-(y)) <= std::numeric_limits<double>::epsilon()* \
-                        std::max(std::abs(x), std::abs(y)))
 
 struct PolarPoint {
   double ro;
@@ -60,7 +58,7 @@ bool cross(const Line& l1, const Line& l2, Point& out) {
   b2 = l2.get_p2().x - l2.get_p1().x;
   c2 = det(l2.get_p1().x, l2.get_p1().y, l2.get_p2().x, l2.get_p2().y);
 
-  if (EQ_D(a1*b2 - a2*b1, 0.0)) {
+  if (EQ_DOUBLE(a1*b2 - a2*b1, 0.0)) {
     out.x = 0;
     out.y = 0;
     return false;
@@ -75,9 +73,9 @@ bool cross(const Intersect& i1, const Line& l2, Point& out) {
   if (!cross(Line{i1.get_p1(), i1.get_p2()}, l2, out)) {
     return false;
   }
-  if (EQ_D(abs(i1.get_p1().x - out.x) + abs(i1.get_p2().x - out.x),
+  if (EQ_DOUBLE(abs(i1.get_p1().x - out.x) + abs(i1.get_p2().x - out.x),
            abs(i1.get_p1().x - i1.get_p2().x)) &&
-      EQ_D(abs(i1.get_p1().y - out.y) + abs(i1.get_p2().y - out.y),
+      EQ_DOUBLE(abs(i1.get_p1().y - out.y) + abs(i1.get_p2().y - out.y),
            abs(i1.get_p1().y - i1.get_p2().y)))
     return true;
   out.x = 0;
@@ -115,7 +113,7 @@ public:
   vector<Point>& get_points() { return ptrs; }
   const vector<Point>& get_points() const { return ptrs; }
 
-  bool cross(const Ray& view, Point& out) {
+  bool cross(const Ray& view, Point& out) const{
     bool found_cross = false;
     double min_range = numeric_limits<double>::max();
     for (size_t i = 0; i < ptrs.size()-1; i++) {
@@ -134,36 +132,96 @@ public:
   }
 };
 
-int main(int argc, char** argv){
+static RobotState current_pose{0,0,0};
+static RobotState prev_pose{0,0,0};
+static vector<Object> world = { // to create a vector of objects
+                                { // to create an object
+                                  { // to create a vector of points
+                                    {100, 100}, // to create point
+                                    {200, 100},
+                                    {200, 200},
+                                    {100, 200}
+                                  }
+                                }
+                              };
 
-  vector<Object> world = {{{{100, 100}, {200, 100}, {200, 200}, {100, 200}}}};
-  // the world was generated (strip line through these points (isn't looped))
-  vector<Point> laser_scan;
-  // there will be points in Euclidean coordinates
-  vector<PolarPoint> polar_laser_scan;
-  // there will be points in polar coordinates
-  for (double angle = -M_PI; angle < M_PI; angle += M_PI/180) {
-    Intersect current_view{{0, 0}, {1000*cos(angle), 1000*sin(angle)}};
-    for (auto& obj : world) {
-      // go on every object in the world
+void generate_laser_scan(const vector<Object>& world,
+                         double angle_min, double angle_max, double angle_inc,
+                         TransformedLaserScan& out_scan) {
+  out_scan.d_x = current_pose.x - prev_pose.x;
+  out_scan.d_y = current_pose.y - prev_pose.y;
+  out_scan.d_yaw = current_pose.theta - prev_pose.theta;
+
+  for (double angle = angle_min + current_pose.theta; angle < angle_max + current_pose.theta; angle += angle_inc) {
+    Ray current_view{{current_pose.x, current_pose.y},
+                     {current_pose.x+100.0*cos(angle),
+                      current_pose.y+100.0*sin(angle)}};
+    double min_dist = numeric_limits<double>::max();
+    bool find_cross = false;
+    for (size_t i = 0; i < world.size(); i++) {
       Point cross_point;
-      if (obj.cross(current_view, cross_point)) {
-        // and try to find intersection with every object
-        laser_scan.push_back(cross_point);
-        polar_laser_scan.push_back({sqrt(pow(cross_point.x, 2.0)+
-                                         pow(cross_point.y, 2.0)), angle});
+      if (world[i].cross(current_view, cross_point)) {
+        find_cross = true;
+        double dist = dist_sq({current_pose.x,current_pose.y},cross_point);
+        if (dist < min_dist) {
+          min_dist = dist;
+        }
       }
     }
+    if (find_cross)
+      out_scan.points.push_back({sqrt(min_dist), angle});
+    else
+      out_scan.points.push_back({1000, angle});
   }
-  // after that display all intersect point coordinates (in Euclidean and polar)
-  int i = 0;
-  for (auto& pt : laser_scan) {
-    double x = polar_laser_scan[i].ro*cos(polar_laser_scan[i].fi);
-    double y = polar_laser_scan[i].ro*sin(polar_laser_scan[i].fi);
-    cout << pt.x << " " << pt.y << "\t| "
-         << x << " " << y << "\t| "
-         << pt.x - x << " " << pt.y - y << endl;
-    i++;
+}
+
+void step (double dx, double dy, double d_yaw) {
+  prev_pose = current_pose;
+  current_pose.x += dx;
+  current_pose.y += dy;
+  current_pose.theta += d_yaw;
+  /*for (auto& obj : world) {
+    for (auto& pt : obj.get_points()) {
+      pt.x -= dx;
+      pt.y -= dy;
+      double x = pt.x;
+      double y = pt.y;
+      pt.x = cos(-d_yaw)*x - sin(-d_yaw)*y;
+      pt.y = sin(-d_yaw)*x + cos(-d_yaw)*y;
+    }
+  }*/
+}
+
+int main(int argc, char** argv){
+
+  TransformedLaserScan scan;
+  ofstream out ("base_scan.txt");
+  double angle_min = -M_PI;
+  double angle_max = M_PI;
+  double angle_inc = M_PI/180;
+
+  generate_laser_scan(world, angle_min, angle_max, angle_inc, scan);
+  out << angle_min << " " << angle_max << " " << angle_inc << " "
+        << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
+  cout << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
+  for (size_t i = 0; i < scan.points.size(); i++) {
+    out  << " " << scan.points[i].range;
+    cout << " " << scan.points[i].range;
   }
+  out << endl;
+  cout << endl;
+
+  step (0.,50,60.0/180.0*M_PI);
+
+  scan.points.clear();
+  generate_laser_scan(world, angle_min, angle_max, angle_inc, scan);
+  out << angle_min << " " << angle_max << " " << angle_inc << " "
+      << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
+  cout << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
+  for (size_t i = 0; i < scan.points.size(); i++) {
+    out << " " << scan.points[i].range/* * cos(scan.points[i].angle) << " " << scan.points[i].range * sin(scan.points[i].angle)*/;
+    cout << " " << scan.points[i].range;
+  }
+  out.close();
   return 0;
 }
