@@ -137,17 +137,19 @@ static RobotState prev_pose{0,0,0};
 static vector<Object> world = { // to create a vector of objects
                                 { // to create an object
                                   { // to create a vector of points
-                                    {100, 100}, // to create point
-                                    {200, 100},
-                                    {200, 200},
-                                    {100, 200}
+                                    {10, 10}, // to create point
+                                    {20, 10},
+                                    {20, 20},
+                                    {10, 20}
                                   }
                                 }
                               };
+double angle_min = -M_PI;
+double angle_max = M_PI;
+double angle_inc = M_PI/180;
 
-void generate_laser_scan(const vector<Object>& world,
-                         double angle_min, double angle_max, double angle_inc,
-                         TransformedLaserScan& out_scan) {
+void generate_laser_scan(TransformedLaserScan& out_scan) {
+  out_scan.points.clear();
   out_scan.d_x = current_pose.x - prev_pose.x;
   out_scan.d_y = current_pose.y - prev_pose.y;
   out_scan.d_yaw = current_pose.theta - prev_pose.theta;
@@ -169,9 +171,9 @@ void generate_laser_scan(const vector<Object>& world,
       }
     }
     if (find_cross)
-      out_scan.points.push_back({sqrt(min_dist), angle});
+      out_scan.points.push_back({sqrt(min_dist), angle, true});
     else
-      out_scan.points.push_back({1000, angle});
+      out_scan.points.push_back({1000, angle, false});
   }
 }
 
@@ -192,36 +194,30 @@ void step (double dx, double dy, double d_yaw) {
   }*/
 }
 
+void put_scan (ostream& stream, TransformedLaserScan& scan) {
+  stream << angle_min << " " << angle_max << " " << angle_inc << " "
+         << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
+  for (size_t i = 0; i < scan.points.size(); i++) {
+    stream  << " " << scan.points[i].range << " " << scan.points[i].is_occupied;
+  }
+  stream << endl;
+  return;
+}
+
 int main(int argc, char** argv){
 
   TransformedLaserScan scan;
   ofstream out ("base_scan.txt");
-  double angle_min = -M_PI;
-  double angle_max = M_PI;
-  double angle_inc = M_PI/180;
 
-  generate_laser_scan(world, angle_min, angle_max, angle_inc, scan);
-  out << angle_min << " " << angle_max << " " << angle_inc << " "
-        << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
-  cout << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
-  for (size_t i = 0; i < scan.points.size(); i++) {
-    out  << " " << scan.points[i].range;
-    cout << " " << scan.points[i].range;
-  }
-  out << endl;
-  cout << endl;
 
-  step (0.,50,60.0/180.0*M_PI);
+  generate_laser_scan(scan);
+  put_scan(out, scan);
 
-  scan.points.clear();
-  generate_laser_scan(world, angle_min, angle_max, angle_inc, scan);
-  out << angle_min << " " << angle_max << " " << angle_inc << " "
-      << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
-  cout << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
-  for (size_t i = 0; i < scan.points.size(); i++) {
-    out << " " << scan.points[i].range/* * cos(scan.points[i].angle) << " " << scan.points[i].range * sin(scan.points[i].angle)*/;
-    cout << " " << scan.points[i].range;
-  }
+  step (0.,5,60.0/180.0*M_PI);
+
+  generate_laser_scan(scan);
+  put_scan(out, scan);
+
   out.close();
   return 0;
 }
