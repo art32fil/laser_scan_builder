@@ -142,11 +142,17 @@ static vector<Object> world = { // to create a vector of objects
                                     {20, 20},
                                     {10, 20}
                                   }
+                                },
+                                {
+                                  {
+                                    {10, 5},
+                                    {20,5}
+                                  }
                                 }
                               };
 double angle_min = -M_PI;
 double angle_max = M_PI;
-double angle_inc = M_PI/180;
+double angle_inc = M_PI/90;
 
 void generate_laser_scan(TransformedLaserScan& out_scan) {
   out_scan.points.clear();
@@ -194,6 +200,14 @@ void step (double dx, double dy, double d_yaw) {
   }*/
 }
 
+void set_pose (double x, double y, double yaw) {
+  prev_pose = current_pose;
+  current_pose.x = x;
+  current_pose.y = y;
+  current_pose.theta = yaw;
+  return;
+}
+
 void put_scan (ostream& stream, TransformedLaserScan& scan) {
   stream << angle_min << " " << angle_max << " " << angle_inc << " "
          << scan.d_x << " " << scan.d_y << " " << scan.d_yaw;
@@ -207,17 +221,41 @@ void put_scan (ostream& stream, TransformedLaserScan& scan) {
 int main(int argc, char** argv){
 
   TransformedLaserScan scan;
-  ofstream out ("base_scan.txt");
 
+  //for (double dx = 0; dx < 50; dx += 1) {
+    ofstream out ("/home/artem/base_scan.txt");
+    set_pose(15,15,M_PI/2);
+    generate_laser_scan(scan);
+    put_scan(out, scan);
 
-  generate_laser_scan(scan);
-  put_scan(out, scan);
+    step(-10,0,20/(double)180*M_PI);
+    generate_laser_scan(scan);
+    put_scan(out, scan);
 
-  step (0.,5,60.0/180.0*M_PI);
+    /*step(0,0,1/(double)180*M_PI);
+    generate_laser_scan(scan);
+    put_scan(out, scan);
 
-  generate_laser_scan(scan);
-  put_scan(out, scan);
+    step(0,0,1/(double)180*M_PI);
+    generate_laser_scan(scan);
+    put_scan(out, scan);
 
-  out.close();
+    step(0,0,1/(double)180*M_PI);
+    generate_laser_scan(scan);
+    put_scan(out, scan);
+
+    step(0,0,1/(double)180*M_PI);
+    generate_laser_scan(scan);
+    put_scan(out, scan);
+
+    step(0,0,1/(double)180*M_PI);
+    generate_laser_scan(scan);
+    put_scan(out, scan);*/
+
+    out.close();
+  //  cout << "press ENTER for next loop\n";
+  //  cin.ignore().get();
+  //}
+  cout << "end of the program\n";
   return 0;
 }
